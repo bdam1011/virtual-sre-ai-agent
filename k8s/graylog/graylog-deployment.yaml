@@ -44,7 +44,7 @@ spec:
         - name: GRAYLOG_ROOT_PASSWORD_SHA2
           value: "05835ee6b50d1f9bcf08481ed0742825839281c26d4cdfa28418c487f936253b"
         - name: GRAYLOG_HTTP_EXTERNAL_URI
-          value: "http://GRAYLOG_EXTERNAL_IP/"
+          value: "http://GRAYLOG_EXTERNAL_IP:9000/"
         - name: GRAYLOG_ELASTICSEARCH_HOSTS
           value: "http://elasticsearch-service:9200"
         - name: GRAYLOG_MONGODB_URI
