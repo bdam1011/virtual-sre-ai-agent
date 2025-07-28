@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graylog
+  namespace: graylog
+  labels:
+    app: graylog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: graylog
+  template:
+    metadata:
+      labels:
+        app: graylog
+    spec:
+      securityContext:
+        runAsUser: 1100
+        runAsGroup: 1100
+        fsGroup: 1100
+      initContainers:
+      - name: graylog-init
+        image: busybox:1.35
+        command: ['sh', '-c', 'chown -R 1100:1100 /usr/share/graylog/data/journal && chmod -R 755 /usr/share/graylog/data/journal']
+        volumeMounts:
+        - name: graylog-storage
+          mountPath: /usr/share/graylog/data/journal
+        securityContext:
+          runAsUser: 0
+      containers:
+      - name: graylog
+        securityContext:
+          runAsUser: 1100
+          runAsGroup: 1100
+          allowPrivilegeEscalation: false
+        image: graylog/graylog:6.3.1
+        ports:
+        - containerPort: 9000
+        - containerPort: 12201
+        env:
+        - name: GRAYLOG_PASSWORD_SECRET
+          value: "somepasswordpepper"
+        - name: GRAYLOG_ROOT_PASSWORD_SHA2
+          value: "05835ee6b50d1f9bcf08481ed0742825839281c26d4cdfa28418c487f936253b"
+        - name: GRAYLOG_HTTP_EXTERNAL_URI
+          value: "http://GRAYLOG_EXTERNAL_IP/"
+        - name: GRAYLOG_ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch-service:9200"
+        - name: GRAYLOG_MONGODB_URI
+          value: "mongodb://admin:password@mongodb-service:27017/graylog?authSource=admin"
+        - name: GRAYLOG_ROOT_TIMEZONE
+          value: "Asia/Taipei"  # 建議改為台灣時區
+        - name: GRAYLOG_SERVER_JAVA_OPTS
+          value: "-Xms1g -Xmx2g -server"  # 可以增加記憶體
+        - name: GRAYLOG_ELASTICSEARCH_CONNECT_TIMEOUT
+          value: "10s"
+        - name: GRAYLOG_ELASTICSEARCH_SOCKET_TIMEOUT
+          value: "60s"
+        - name: GRAYLOG_ELASTICSEARCH_VERSION
+          value: "7"
+        volumeMounts:
+        - name: graylog-storage
+          mountPath: /usr/share/graylog/data/journal
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/system/lbstatus
+            port: 9000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /api/system/lbstatus
+            port: 9000
+          initialDelaySeconds: 90
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: graylog-storage
+        emptyDir: {}
+---
+# Graylog Web UI Service (LoadBalancer)
+apiVersion: v1
+kind: Service
+metadata:
+  name: graylog-service
+  namespace: graylog
+  labels:
+    app: graylog
+spec:
+  selector:
+    app: graylog
+  ports:
+    - name: web
+      protocol: TCP
+      port: 9000
+      targetPort: 9000
+  type: LoadBalancer
+  loadBalancerIP: "GRAYLOG_EXTERNAL_IP"
+---
+# Graylog GELF Input Service (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: graylog-gelf-service
+  namespace: graylog
+  labels:
+    app: graylog
+spec:
+  selector:
+    app: graylog
+  ports:
+    - name: gelf-tcp
+      protocol: TCP
+      port: 12201
+      targetPort: 12201
+    - name: gelf-udp
+      protocol: UDP
+      port: 12201
+      targetPort: 12201
+  type: ClusterIP

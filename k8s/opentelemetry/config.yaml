@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: opentelemetry
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: 
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+      zipkin:
+        endpoint: "0.0.0.0:9411"
+
+    processors:
+      batch: 
+        timeout: 60s
+        send_batch_size: 1000
+      filter/ottl:
+        error_mode: ignore
+        traces:
+          span:
+            - attributes["url.path"] == "/actuator/health/readiness"
+            - attributes["url.path"] == "/actuator/health/liveness"
+      transform:
+          metric_statements:
+          - context: resource
+            statements:
+              - set(attributes["service.instance.id"], attributes["host.name"])
+
+    exporters:
+      debug:
+        verbosity: "detailed"
+      googlecloud:
+        metric:
+          prefix: "custom.googleapis.com/opentelemetry/"
+          resource_filters:
+            - prefix: "k8s_container"
+        log:
+          default_log_name: "otel-logs"
+      # Graylog GELF exporter
+      logging/graylog:
+        loglevel: info
+        sampling_initial: 5
+        sampling_thereafter: 200
+
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp,zipkin]
+          processors: [filter/ottl, batch]
+          exporters: [googlecloud, logging/graylog]
+        metrics:  
+          receivers: [otlp]
+          processors: [transform ,batch]  
+          exporters: [googlecloud, logging/graylog]  
+        logs:
+          receivers: [otlp]
+          exporters: [googlecloud, logging/graylog]
